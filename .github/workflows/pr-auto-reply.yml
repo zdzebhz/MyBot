@@ -1,0 +1,48 @@
+name: PR auto acknowledgement
+
+on:
+  pull_request_target:
+    types:
+      - opened
+      - reopened
+      - ready_for_review
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: pr-auto-reply-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  acknowledge:
+    name: Acknowledge external pull request
+    if: >-
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.user.login != github.repository_owner &&
+      github.event.pull_request.user.type != 'Bot'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Leave one acknowledgement comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        shell: bash
+        run: |
+          marker='<!-- mybot-pr-acknowledgement -->'
+
+          if gh api "repos/${REPOSITORY}/issues/${PR_NUMBER}/comments" \
+            --paginate \
+            --jq '.[].body' | grep -Fq "$marker"; then
+            echo "Acknowledgement already exists; nothing to do."
+            exit 0
+          fi
+
+          gh pr comment "$PR_NUMBER" \
+            --repo "$REPOSITORY" \
+            --body "${marker}
+
+          收到你的 PR，感谢贡献！我会尽快查看。"
