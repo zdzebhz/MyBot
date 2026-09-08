@@ -24,3 +24,16 @@ data/
 logs/
 *.log
 
+# MyBot local runtime (dependencies, credentials, cookies, state)
+.runtime/
+.data/
+.upstream/
+config/mybot.toml
+
+# Test / build artifacts
+.coverage
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+

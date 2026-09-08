@@ -1,5 +1,11 @@
 # MyBot 制作方案（待选型）
 
+> **Status (2026-09-08): archived decision record.** The implemented design is
+> QwenPaw + OpenBiliClaw + the read-only MyBot adapter. GitHub notifications use
+> GitHub's native email settings, and automatic GitHub replies are intentionally
+> out of scope. See the repository README for the current operating guide.
+
+
 更新时间：2026-09-08
 
 ## 先解释截图里的现象

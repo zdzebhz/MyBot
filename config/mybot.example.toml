@@ -1,0 +1,20 @@
+# Copy this file to mybot.toml. The local copy is ignored by Git.
+
+[digest]
+platforms = ["bilibili", "xiaohongshu"]
+fetch_per_platform = 20
+digest_limit = 10
+max_age_hours = 72
+
+# Matching is case-insensitive. Edit mybot.toml to tune your feed.
+keywords = [
+  "AI", "人工智能", "大模型", "语言模型", "LLM", "Agent", "智能体",
+  "多模态", "生成式", "机器学习", "深度学习", "神经网络",
+  "机器人", "具身智能", "OpenAI", "ChatGPT", "Anthropic",
+  "Claude", "DeepSeek", "Gemini", "Qwen", "通义千问", "MCP", "RAG",
+]
+
+[runtime]
+openbiliclaw_root = ".runtime/openbiliclaw"
+state_file = ".data/mybot/sent.json"
+bridge_timeout_seconds = 180

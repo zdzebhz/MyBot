@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mybot-ai-digest"
+version = "0.1.0"
+description = "Read-only AI news digest adapter for QwenPaw and OpenBiliClaw"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "zdzebhz" }]
+dependencies = []
+
+[project.scripts]
+mybot = "mybot.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mybot"]
+
+[tool.black]
+target-version = ["py312"]
+line-length = 88
