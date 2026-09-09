@@ -108,10 +108,10 @@ class DigestTests(unittest.TestCase):
                 },
             ]
             ranked, stats = rank_items(items, settings, {"seen"}, now=now)
-            self.assertEqual([item["_mybot_key"] for item in ranked], ["new"])
+            self.assertEqual([item["_mybot_key"] for item in ranked], ["unknown:new", "unknown:old"])
             self.assertEqual(stats["duplicate"], 1)
             self.assertEqual(stats["seen"], 1)
-            self.assertEqual(stats["too_old"], 1)
+            self.assertEqual(stats["too_old"], 0)
             self.assertEqual(stats["not_ai"], 1)
 
     def test_unknown_publish_time_does_not_outrank_known_recent_item(self):
@@ -127,7 +127,7 @@ class DigestTests(unittest.TestCase):
                 },
             ]
             ranked, _ = rank_items(items, settings, set(), now=now)
-            self.assertEqual(ranked[0]["_mybot_key"], "recent")
+            self.assertEqual(ranked[0]["_mybot_key"], "unknown:recent")
 
     def test_partial_platform_failure_still_returns_digest(self):
         now = datetime(2026, 9, 8, 8, tzinfo=UTC)

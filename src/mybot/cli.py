@@ -26,13 +26,17 @@ def _settings_or_exit(config: str | None):
 
 def command_digest(args: argparse.Namespace) -> int:
     settings = _settings_or_exit(args.config)
+    if args.commit:
+        raise ValueError("--commit 已停用；请使用 send-email")
     result = build_digest(
         settings, refresh=args.refresh, include_seen=args.include_seen
     )
     output = render_json(result) if args.format == "json" else render_markdown(result)
+    if args.output:
+        path=Path(args.output).resolve()
+        path.parent.mkdir(parents=True,exist_ok=True)
+        path.write_text(output,encoding="utf-8")
     print(output, end="")
-    if args.commit and result.items and not result.all_sources_failed:
-        mark_sent(settings.state_file, result.items, result.generated_at)
     return 2 if result.all_sources_failed else 0
 
 
@@ -111,18 +115,81 @@ def command_doctor(args: argparse.Namespace) -> int:
     return 0 if passed else 1
 
 
+
+def command_collect(args):
+    from .radar import collect
+    report=collect(_settings_or_exit(args.config),search=not args.cache_only)
+    print(json.dumps(report,ensure_ascii=False,indent=2))
+    return 2 if report["errors"] else 0
+
+
+def command_email(args):
+    from .mail import send
+    settings=_settings_or_exit(args.config)
+    result=build_digest(settings)
+    print(json.dumps(send(settings,result),ensure_ascii=False))
+    return 0
+
+
+def command_run(args):
+    from .worker import run
+    run(_settings_or_exit(args.config),once=args.once)
+    return 0
+
+
+def command_read(args):
+    from .pool import mark_read
+    from .digest import utc_now
+    mark_read(_settings_or_exit(args.config),args.key,utc_now().isoformat())
+    print("已标记本地已读")
+    return 0
+
+
+def command_email_setup(args):
+    import getpass
+    from .mail import credentials
+    settings=_settings_or_exit(args.config)
+    secret=getpass.getpass("SMTP 授权码（输入不回显，不是 QQ 登录密码）: ")
+    if not secret.strip():
+        raise ValueError("授权码不能为空")
+    path=settings.state_file.parent/"email-secret.json"
+    path.parent.mkdir(parents=True,exist_ok=True)
+    path.write_text(json.dumps({"password":secret}),encoding="utf-8")
+    credentials(settings)
+    print("已保存到本机 Git 忽略目录；尚未发送邮件。")
+    return 0
+
+
+def command_email_status(args):
+    from . import pool
+    from .mail import credentials
+    settings=_settings_or_exit(args.config)
+    try:
+        credentials(settings)
+        configured=True
+    except (ValueError,OSError):
+        configured=False
+    with pool.connect(settings) as db:
+        rows=[dict(r) for r in db.execute("SELECT id,status,created_at,error FROM outbox ORDER BY created_at DESC LIMIT 10")]
+        counts=dict(db.execute("SELECT COUNT(*) AS total,SUM(sent_at IS NOT NULL) AS sent,SUM(read_at IS NOT NULL) AS read FROM items").fetchone())
+    print(json.dumps(dict(credentials_present=configured,recipient=settings.email_to,
+                         pool=counts,outbox=rows),ensure_ascii=False,indent=2))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="mybot", description="只读 AI 资讯日报")
+    parser = argparse.ArgumentParser(prog="mybot", description="只读 AI 信息雷达")
     parser.add_argument("--version", action="version", version=__version__)
     parser.add_argument("--config", help="TOML 配置路径；默认 config/mybot.toml")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    digest = subparsers.add_parser("digest", help="生成 B 站/小红书 AI 资讯日报")
+    digest = subparsers.add_parser("digest", help="从持久 AI 池预览待交付内容")
     digest.add_argument("--format", choices=("markdown", "json"), default="markdown")
+    digest.add_argument("--output",help="另存本地预览文件，不标记发送")
     digest.add_argument(
         "--refresh",
         action="store_true",
-        help="推荐池不足时触发刷新（更慢）",
+        help="先采集并审核信息池（遵守上游限速）",
     )
     digest.add_argument(
         "--include-seen",
@@ -132,9 +199,25 @@ def build_parser() -> argparse.ArgumentParser:
     digest.add_argument(
         "--commit",
         action="store_true",
-        help="成功输出后记入去重账本",
+        help="已停用，改用 send-email",
     )
     digest.set_defaults(handler=command_digest)
+
+    collect = subparsers.add_parser("collect", help="采集并积累AI信息池")
+    collect.add_argument("--cache-only",action="store_true")
+    collect.set_defaults(handler=command_collect)
+    email = subparsers.add_parser("send-email",help="通过SMTP交付，成功才标记发送")
+    email.set_defaults(handler=command_email)
+    setup_email = subparsers.add_parser("configure-email",help="本机安全输入SMTP授权码")
+    setup_email.set_defaults(handler=command_email_setup)
+    email_status = subparsers.add_parser("email-status",help="查看邮件和池状态，不输出凭据")
+    email_status.set_defaults(handler=command_email_status)
+    runner = subparsers.add_parser("run",help="持续采集，08:30交付；电脑关机时暂停")
+    runner.add_argument("--once",action="store_true")
+    runner.set_defaults(handler=command_run)
+    read = subparsers.add_parser("mark-read",help="标记本地已读，不调用平台互动")
+    read.add_argument("key")
+    read.set_defaults(handler=command_read)
 
     doctor = subparsers.add_parser("doctor", help="检查本地环境和桥接状态")
     doctor.add_argument("--json", action="store_true")
@@ -149,8 +232,8 @@ def main(argv: list[str] | None = None) -> int:
     except subprocess.TimeoutExpired as exc:
         print(f"执行超时：{exc}", file=sys.stderr)
         return 2
-    except BridgeError as exc:
-        print(f"桥接错误：{exc}", file=sys.stderr)
+    except (ValueError, RuntimeError, OSError) as exc:
+        print(f"执行错误：{exc}", file=sys.stderr)
         return 2
     except KeyboardInterrupt:
         print("已取消", file=sys.stderr)

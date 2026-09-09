@@ -1,199 +1,87 @@
-# MyBot
+# MyBot · AI 信息雷达
 
-一个本地优先、只读的个人 AI 资讯助理。当前版本以
-[QwenPaw](https://github.com/agentscope-ai/QwenPaw) 作为 Agent OS 和消息频道，
-以 [OpenBiliClaw](https://github.com/whiteguo233/OpenBiliClaw) 发现 B 站、
-小红书内容，MyBot 负责 AI 主题过滤、时效排序、去重和日报格式。
+持续发现「还没看过、值得了解」的 AI 信息，而不只是今天的新闻。
+QwenPaw 保留对话入口，OpenBiliClaw 负责平台认证/推荐/限速搜索，
+MyBot 负责持久信息池、AI 相关性/价值筛选、去重和邮件。
 
-## 当前能力
+## 发现与筛选
 
-- 从 B 站、小红书的 OpenBiliClaw 推荐池读取内容。
-- 只保留最近 72 小时且命中 AI 关键词的条目。
-- 跨平台去重；已推送内容在 90 天内不重复发送。
-- 一个平台暂时失败时，仍输出另一个平台的结果并标注失败原因。
-- 通过 QwenPaw 接入 QQ、飞书、钉钉、Discord 等受支持频道。
-- 用 QwenPaw Cron 每天定时生成并推送中文摘要。
-- 提供 `doctor`、启动、停止、状态检查和定时配置脚本。
+- 复用 OpenBiliClaw 缓存中推荐、热门、相关、探索的成果；再轮换 12 组 AI 专项搜索，
+  不依赖个人历史兴趣。B 站交替按发布时间/综合相关排序，XHS 复用扩展任务队列。
+- 关键词宽召回 + 已有 DeepSeek 审核相关性、价值和类型。未审核候选暂不交付。
+  判断依据是标题/简介，不是全文阅读或事实核验。
+- 新闻按 3 天半衰期降权；教程/项目/工具/经验按 365 天缓慢降权。
+  没有 72 小时硬过滤；首次发现时间与发布时间分开保存。
+- 个人兴趣最多 3 分；探索加分，类别/作者/平台软配额提高多样性。热度不参与加分。
+- ID/规范 URL/标题指纹去重，本地 bge-m3 对同批语义近重复分组。
+  已读/已发送长期保留，不自动 90 天遗忘；预览不计作推送。
+- 每 6 小时搜索、每小时吸收异步结果并审核最多 24 条；北京时间每天 08:30 后
+  挑选最多 20 条邮件交付。休眠/关机时暂停，恢复后补当日，不补发多天旧邮件。
+- SMTP 接受后才标记已发送；失败或不确定不盲目重发。同日最多一批。
+  SMTP 接受不代表进入收件箱，仍可能进垃圾箱。
 
-GitHub 邮件提醒继续使用 GitHub 自带的 Watch/Notifications 设置，已经与本项目
-解耦。本仓库不会自动回复 PR、Issue 或 Review。
+审计与架构见 [docs/AI_RADAR.md](docs/AI_RADAR.md)。GitHub Watch 邮件独立，不自动回复 PR/Issue。
 
-## 安全边界
+## 已安装环境的使用
 
-本版本严格只读：
-
-- 不点赞、不评论、不关注、不收藏、不发帖。
-- 不提供 GitHub 自动回复。
-- 平台内容始终被当作不可信数据，而不是 Agent 指令。
-- Cookie、Token、API Key 和本地状态只放在被 Git 忽略的
-  `.runtime/`、`.data/`、`config/mybot.toml` 中。
-- 服务默认只监听本机回环地址，不直接暴露到局域网或公网。
-
-## 固定版本
-
-- Python 3.12
-- QwenPaw 2.2.0
-- OpenBiliClaw 0.3.218
-
-上游仍在快速迭代，尤其 OpenBiliClaw 标记为 Pre-Alpha。本项目固定版本是为了
-让首版可复现；升级前应先跑测试和 `doctor`。
-
-## 快速开始（Windows）
-
-以下命令使用 Windows 自带的 `powershell.exe`，因此兼容 Windows PowerShell 5.1。
-PowerShell 7 用户也可以将命令开头替换为 `pwsh`。
-
-### 1. 安装
-
-先阅读 QwenPaw 首次初始化显示的安全说明；确认接受后，在仓库根目录运行：
+不必重装或重做平台初始化。在项目根目录 PowerShell 执行：
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup.ps1 -AcceptQwenPawSecurityNotice
+.\scripts\start.ps1
+.\.venv\Scripts\python.exe -m mybot collect
+.\.venv\Scripts\python.exe -m mybot digest
+.\.venv\Scripts\python.exe -m mybot email-status
 ```
 
-脚本会创建项目虚拟环境、安装固定版本的两个上游、生成本地配置，并把
-`ai-daily-digest` Skill 安装到项目专属的 QwenPaw 工作区。
+collect --cache-only 只吸收缓存/异步结果并审核，不新建搜索。
+digest --format json 输出结构化预览；mark-read <mybot_key> 只标记本地已读。
+--commit 已停用。configure-cron.ps1 不再创建频道任务，避免重复交付，
+不会擅自删除既有自定义 QwenPaw Cron。
 
-MyBot 默认替你关闭 QwenPaw 的匿名环境遥测。若你愿意开启，可额外传入
-`-EnableQwenPawTelemetry`。
+## 邮件设置
 
-### 2. 启动本地服务
+本地 config/mybot.toml 的 [email] 配置 from/to/smtp_host/smtp_port。
+QQ 使用 SMTP SSL 465；请启用邮箱 SMTP 并取得授权码（不是 QQ 密码），在本机输入：
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\start.ps1
+.\.venv\Scripts\python.exe -m mybot configure-email
+# 可选：立即发送当日一份，后台同日不会重复
+.\.venv\Scripts\python.exe -m mybot send-email
 ```
 
-打开：
+输入不回显；保存于 Git 忽略的 .data/mybot/email-secret.json，也支持 MYBOT_SMTP_PASSWORD。
+文件没有额外加密，请保护本机账户/磁盘，不共享 .data，不在聊天中发送授权码。
+未配置邮箱可正常采集/预览，不会发送。失败/uncertain 时用 email-status 检查，
+核对实际收件后再处理，不直接删库重试。
 
-- QwenPaw 控制台：<http://127.0.0.1:8088/>
-- OpenBiliClaw：<http://127.0.0.1:8420/>
+## 部署与边界
 
-两个进程都以隐藏窗口运行，日志写入 `.data/logs/`。
+固定 Python 3.12、QwenPaw 2.2.0、OpenBiliClaw 0.3.218。
+初次安装使用 scripts/setup.ps1 -AcceptQwenPawSecurityNotice，
+配合浏览器扩展及 scripts/initialize-openbiliclaw.ps1 初始化。
+Ollama 和 bge-m3 需另行安装，setup.ps1 不自动下载模型。
+便携版可放在项目 .runtime/ollama/bin/ollama.exe，模型目录为 .runtime/ollama/models；
+将项目放在 D 盘即可让这些文件保留在 D 盘。也可自行维护已有的本机 Ollama 服务。
+MyBot 使用 http://127.0.0.1:11434 上的 bge-m3；不可用时报告警告并退回标题去重。
+start.ps1 隐藏启动后台；stop.ps1 停止本项目管理进程。
+默认不注册开机自启动；电脑重启后再运行 start。
+本机端口：OpenBiliClaw 8420、QwenPaw 8088、Ollama 11434。
+status.ps1 检查服务；日志在 .data/logs，信息池在 .data/mybot/radar.sqlite3。
 
-### 3. 登录 B 站和小红书并初始化画像
+B站/小红书只读，不点赞、不评论、不关注、不收藏、不发布。
+模型只接收已授权内容元数据，不收到 Cookie 或邮箱授权码。
+平台内容与模型输出是数据，不是执行指令。保留上游频控，不绕验证码/风控。
+小红书需要浏览器和扩展在线，异步搜索不是即时完成。
+覆盖不是穷尽：不显式提 AI 的作品仍可能漏召回；跨日语义改标题搬运也未完全去重。
+未来来源应接入统一元数据/已读事件契约，沿用信息池/评分/交付，不另建新闻时效管线。
+测试：.venv/Scripts/python.exe -m unittest discover -s tests -v。
 
-1. 从 [OpenBiliClaw Releases](https://github.com/whiteguo233/OpenBiliClaw/releases)
-   下载与固定版本匹配的 Chrome/Edge 浏览器扩展并加载。
-2. 在同一个浏览器中分别登录 B 站和小红书，保持浏览器与扩展开启。
-3. 运行：
+## 开源与致谢
 
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\initialize-openbiliclaw.ps1
-```
-
-脚本默认只启用 B 站和小红书，显式关闭其他内容源。初始化会交互式询问 OpenBiliClaw
-使用的模型服务、模型名和 API Key；请本人填写。验证码、扫码登录和风控验证也
-必须本人完成。任何凭据都不要提交到 Git。
-
-### 4. 配置 QwenPaw 模型和消息频道
-
-进入 QwenPaw 控制台：
-
-1. 在“设置 → 模型”中添加你要使用的模型和 API Key。
-2. 在“控制 → 频道”中启用 QQ、飞书或其他目标频道。
-3. 按页面说明完成 Bot 凭据、用户白名单及会话配对。
-
-频道涉及外部平台账号，MyBot 不会替你创建或授权账号。
-
-### 5. 试跑日报
-
-预览不会写入已推送账本：
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\digest.ps1
-```
-
-查看原始 JSON：
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\digest.ps1 -Format json
-```
-
-确认内容正常后，可在 QwenPaw 对话中发送“生成今天的 AI 日报”，或直接使用
-`/ai-daily-digest`。
-
-### 6. 创建每日推送
-
-先从已经配对成功的 QwenPaw 会话中取得频道、用户 ID 和会话 ID，然后运行：
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\configure-cron.ps1 `
-  -Channel "qq" `
-  -TargetUser "你的用户ID" `
-  -TargetSession "你的会话ID"
-```
-
-默认每天 08:30（Asia/Shanghai）推送。自定义时间示例：
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\configure-cron.ps1 `
-  -Channel "feishu" `
-  -TargetUser "ou_xxx" `
-  -TargetSession "oc_xxx" `
-  -Cron "0 9 * * *"
-```
-
-## 常用命令
-
-```powershell
-# 完整环境与桥接检查
-.\scripts\status.ps1
-
-# 刷新推荐池后预览（比默认模式慢）
-.\scripts\digest.ps1 -Refresh
-
-# 输出并写入去重账本，通常只给定时任务使用
-.\scripts\digest.ps1 -Format json -Commit
-
-# 停止本项目启动的两个后台进程
-.\scripts\stop.ps1
-```
-
-直接使用 Python CLI：
-
-```powershell
-.\.venv\Scripts\python.exe -m mybot doctor
-.\.venv\Scripts\python.exe -m mybot digest --format markdown
-```
-
-## 调整信息范围
-
-首次安装后编辑 `config/mybot.toml`：
-
-- `platforms`：采集平台。
-- `fetch_per_platform`：每个平台候选数。
-- `digest_limit`：日报最多条目数。
-- `max_age_hours`：内容最大年龄。
-- `keywords`：AI 关键词；匹配时不区分大小写。
-
-本地配置不会被 Git 跟踪。模板见
-[config/mybot.example.toml](config/mybot.example.toml)。
-
-## 工作原理
-
-```text
-B站 / 小红书登录态
-        ↓（浏览器扩展）
-OpenBiliClaw 推荐池
-        ↓（只读 Agent Bridge）
-MyBot：时效过滤 → AI 评分 → 去重 → JSON/Markdown
-        ↓
-QwenPaw Skill + Cron
-        ↓
-QQ / 飞书 / 其他已配置频道
-```
-
-## 故障排查
-
-- `doctor` 提示 OpenBiliClaw 不可用：先确认安装和初始化完成。
-- 小红书为 0 条：确认浏览器已登录、扩展已启用且本地后端在运行；若出现验证码，
-  请在浏览器中本人完成。
-- QwenPaw 没有发送：确认模型调用成功、频道已配对、目标用户/会话 ID 正确，
-  再用 QwenPaw 的 `cron list` 和 `cron run` 检查任务。
-- 日报为空：可先用 `-Refresh`，再按需要扩大
-  `max_age_hours` 或补充关键词。
-- 查看 `.data/logs/openbiliclaw.err.log` 与
-  `.data/logs/qwenpaw.err.log` 获取后台错误。
-
-架构选择的完整比较仍保存在
-[docs/ARCHITECTURE_OPTIONS.md](docs/ARCHITECTURE_OPTIONS.md)。
+MyBot 自有代码采用 [MIT License](LICENSE)。
+依赖 [QwenPaw](https://github.com/agentscope-ai/QwenPaw)、
+[OpenBiliClaw](https://github.com/whiteguo233/OpenBiliClaw)、
+[Ollama](https://github.com/ollama/ollama) 和 bge-m3；
+上游代码、模型和平台服务分别遵循各自许可证与使用条款，本仓库不重新授权它们。
+仓库不包含平台 Cookie、API Key、邮箱授权码、个人画像、内容数据库或已安装的运行时。
+请使用自己的账户及凭据，仅在授权范围内低频读取，遵守平台规则，不绕过验证或访问限制。

@@ -11,6 +11,9 @@ $OpenBiliRoot = Join-Path $Root ".runtime\openbiliclaw"
 $OpenBiliExe = Join-Path $OpenBiliRoot ".venv\Scripts\openbiliclaw.exe"
 $QwenExe = Join-Path $Root ".runtime\qwenpaw\Scripts\qwenpaw.exe"
 $QwenConfig = Join-Path $Data "qwenpaw\config.json"
+$OllamaRoot = Join-Path $Root ".runtime\ollama"
+$OllamaExe = Join-Path $OllamaRoot "bin\ollama.exe"
+$OllamaModels = Join-Path $OllamaRoot "models"
 
 foreach ($Required in @($OpenBiliExe, $QwenExe)) {
     if (-not (Test-Path -LiteralPath $Required)) {
@@ -26,6 +29,9 @@ New-Item -ItemType Directory -Force -Path $Logs, $Pids | Out-Null
 $env:QWENPAW_WORKING_DIR = Join-Path $Data "qwenpaw"
 $env:MYBOT_ROOT = $Root
 $env:PYTHONUTF8 = "1"
+$env:OLLAMA_MODELS = $OllamaModels
+$env:OLLAMA_HOST = "127.0.0.1:11434"
+$env:OLLAMA_KEEP_ALIVE = "5m"
 
 function Get-TrackedProcess([string]$PidFile) {
     if (-not (Test-Path -LiteralPath $PidFile)) {
@@ -77,11 +83,33 @@ $QwenArgs = @{
     Arguments = @("app")
     WorkingDirectory = $Root
 }
+if (Test-Path -LiteralPath $OllamaExe) {
+    New-Item -ItemType Directory -Force -Path $OllamaModels | Out-Null
+    $OllamaArgs = @{
+        Name = "ollama"
+        Executable = $OllamaExe
+        Arguments = @("serve")
+        WorkingDirectory = (Join-Path $OllamaRoot "bin")
+    }
+    Start-ManagedProcess @OllamaArgs
+}
+else {
+    Write-Warning "未找到 D 盘便携版 Ollama：$OllamaExe。embedding 服务将不可用。"
+}
 Start-ManagedProcess @OpenBiliArgs
 Start-ManagedProcess @QwenArgs
+
+$MyBotPython = Join-Path $Root ".venv\Scripts\python.exe"
+if (Test-Path -LiteralPath $MyBotPython) {
+    Start-ManagedProcess -Name "radar" -Executable $MyBotPython -Arguments @("-u", "-m", "mybot", "run") -WorkingDirectory $Root
+}
+else {
+    Write-Warning "MyBot Python missing; radar worker was not started."
+}
 
 Start-Sleep -Seconds 4
 Write-Host ""
 Write-Host "OpenBiliClaw: http://127.0.0.1:8420/"
 Write-Host "QwenPaw:      http://127.0.0.1:8088/"
+Write-Host "Ollama:       http://127.0.0.1:11434/"
 Write-Host "日志目录:     $Logs"

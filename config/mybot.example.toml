@@ -3,8 +3,7 @@
 [digest]
 platforms = ["bilibili", "xiaohongshu"]
 fetch_per_platform = 20
-digest_limit = 10
-max_age_hours = 72
+digest_limit = 20
 
 # Matching is case-insensitive. Edit mybot.toml to tune your feed.
 keywords = [
@@ -18,3 +17,12 @@ keywords = [
 openbiliclaw_root = ".runtime/openbiliclaw"
 state_file = ".data/mybot/sent.json"
 bridge_timeout_seconds = 180
+
+[radar]
+queries_per_cycle = 2
+
+[email]
+smtp_host = "smtp.qq.com"
+smtp_port = 465
+from = ""
+to = ""

@@ -18,8 +18,10 @@ function Test-Url([string]$Name, [string]$Url) {
 
 Test-Url "OpenBiliClaw" "http://127.0.0.1:8420/api/health"
 Test-Url "QwenPaw" "http://127.0.0.1:8088/"
+Test-Url "Ollama" "http://127.0.0.1:11434/api/version"
 if (Test-Path -LiteralPath $Python) {
     & $Python -m mybot doctor
+    & $Python -m mybot email-status
 }
 else {
     Write-Host "[!!] MyBot 未安装。请先运行 scripts\setup.ps1。"

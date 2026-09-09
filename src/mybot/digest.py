@@ -1,4 +1,4 @@
-"""Build a filtered, ranked, deduplicated AI news digest."""
+"""AI radar delivery rendering; collection and state live in radar/pool."""
 
 from __future__ import annotations
 
@@ -127,70 +127,14 @@ def rank_items(
     include_seen: bool = False,
     now: datetime | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
-    now = now or utc_now()
-    cutoff = now - timedelta(hours=settings.max_age_hours)
-    deduped: dict[str, dict[str, Any]] = {}
-    stats = {
-        "received": 0,
-        "duplicate": 0,
-        "seen": 0,
-        "too_old": 0,
-        "not_ai": 0,
-    }
-    for original in items:
-        stats["received"] += 1
-        item, key = dict(original), item_key(original)
-        if key in deduped:
-            stats["duplicate"] += 1
-            continue
-        if not include_seen and key in sent_keys:
-            stats["seen"] += 1
-            continue
-        published = parse_datetime(item.get("published_at"))
-        if published is not None and published < cutoff:
-            stats["too_old"] += 1
-            continue
-        score, matches = keyword_score(item, settings.keywords)
-        if score <= 0:
-            stats["not_ai"] += 1
-            continue
-        age_hours = (now - published).total_seconds() / 3600 if published else None
-        freshness = 0.0 if age_hours is None else max(0.0, 4.0 - age_hours / 24)
-        engagement = min(
-            3.0,
-            (_number(item, "like_count") + _number(item, "favorite_count")) / 10000,
-        )
-        item.update(
-            {
-                "_mybot_key": key,
-                "_mybot_matches": matches,
-                "_mybot_timestamp": published.timestamp() if published else 0,
-                "_mybot_score": round(
-                    score
-                    + freshness
-                    + _number(item, "confidence") * 2
-                    + engagement
-                    - _number(item, "source_rank") * 0.01,
-                    4,
-                ),
-            }
-        )
-        deduped[key] = item
-    ranked = sorted(
-        deduped.values(),
-        key=lambda item: (
-            -float(item["_mybot_score"]),
-            -float(item["_mybot_timestamp"]),
-            str(item.get("title", "")),
-        ),
-    )
-    return ranked[: settings.digest_limit], stats
+    from .radar import rank
+    return rank(items, settings, sent_keys, include_seen, now)
 
 
 def load_sent(path: Path) -> dict[str, str]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except FileNotFoundError:
         return {}
     values = payload.get("sent", {}) if isinstance(payload, dict) else {}
     return (
@@ -206,12 +150,7 @@ def mark_sent(
     now: datetime | None = None,
 ) -> None:
     now, sent = now or utc_now(), load_sent(path)
-    cutoff = now - timedelta(days=90)
-    kept = {
-        key: stamp
-        for key, stamp in sent.items()
-        if parse_datetime(stamp) is None or parse_datetime(stamp) >= cutoff
-    }
+    kept = dict(sent)
     kept.update({item_key(item): now.isoformat() for item in items})
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(f"{path.suffix}.tmp")
@@ -247,23 +186,8 @@ def build_digest(
     client: OpenBiliClawClient | None = None,
     now: datetime | None = None,
 ) -> DigestResult:
-    client, collected, errors = client or OpenBiliClawClient(settings), [], {}
-    for platform in settings.platforms:
-        try:
-            collected.extend(
-                client.recommend(platform, settings.fetch_per_platform, refresh)
-            )
-        except BridgeError as exc:
-            errors[platform] = str(exc)
-    generated_at = now or utc_now()
-    items, stats = rank_items(
-        collected,
-        settings,
-        set(load_sent(settings.state_file)),
-        include_seen=include_seen,
-        now=generated_at,
-    )
-    return DigestResult(generated_at, items, errors, stats)
+    from .radar import build
+    return build(settings, refresh, include_seen, client, now)
 
 
 def public_item(item: dict[str, Any]) -> dict[str, Any]:
@@ -272,6 +196,9 @@ def public_item(item: dict[str, Any]) -> dict[str, Any]:
         mybot_key=item.get("_mybot_key", item_key(item)),
         matched_keywords=item.get("_mybot_matches", []),
         relevance_score=item.get("_mybot_score", 0),
+        category=item.get("_mybot_category", "other"),
+        score_parts=item.get("_mybot_score_parts", {}),
+        first_discovered_at=item.get("first_discovered_at", ""),
     )
     return result
 
@@ -296,22 +223,26 @@ def render_json(result: DigestResult) -> str:
 
 def render_markdown(result: DigestResult) -> str:
     date_label = result.generated_at.astimezone().strftime("%Y-%m-%d %H:%M")
-    lines = [f"# AI 资讯日报（{date_label}）", ""]
+    lines = [f"# AI 信息雷达（{date_label}）", "",
+             "这是最近发现、尚未标记看过或推送的一批 AI 内容。旧作品也可能是新发现。",
+             "推荐依据为标题/简介的模型判断，未核验全文及创作者的事实主张。", ""]
     if not result.items:
-        lines += ["本轮没有找到符合时间和关键词条件的新内容。", ""]
+        lines += ["信息池中暂无未读、未推送的合格 AI 内容。", ""]
     for index, item in enumerate(result.items, 1):
         title = str(item.get("title") or "未命名内容").strip()
         url = str(item.get("content_url") or "").strip()
         title_text = f"[{title}]({url})" if URL_RE.match(url) else title
         author = item.get("author_name") or item.get("up_name") or "未知作者"
         published = (
-            item.get("published_label") or item.get("published_at") or "时间未知"
+            item.get("published_label") or (parse_datetime(item.get("published_at")).isoformat() if parse_datetime(item.get("published_at")) else "时间未知")
         )
         lines += [
             f"## {index}. {title_text}",
             "",
             f"- 来源：{item.get('source_platform') or '未知平台'} · {author}",
             f"- 发布时间：{published}",
+            f"- 首次发现：{item.get('first_discovered_at', '本轮')} · 类型：{item.get('_mybot_category', 'other')}",
+            f"- 雷达评分：{item.get('_mybot_score', 0)}（启发式排序，非事实核验）",
         ]
         if item.get("_mybot_matches"):
             lines.append(f"- 命中：{', '.join(item['_mybot_matches'][:8])}")

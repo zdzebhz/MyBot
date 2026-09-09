@@ -46,13 +46,22 @@ class Settings:
     config_path: Path
     platforms: tuple[str, ...]
     keywords: tuple[str, ...]
-    max_age_hours: int
+    max_age_hours: int  # Legacy constructor compatibility; radar never age-filters.
     fetch_per_platform: int
     digest_limit: int
     bridge_timeout_seconds: int
     state_file: Path
     openbiliclaw_root: Path
     openbiliclaw_python: Path
+    queries_per_cycle: int = 2
+    smtp_host: str = "smtp.qq.com"
+    smtp_port: int = 465
+    email_to: str = ""
+    email_from: str = ""
+
+    @property
+    def pool_file(self) -> Path:
+        return self.state_file.parent / "radar.sqlite3"
 
 
 def _table(data: dict[str, Any], name: str) -> dict[str, Any]:
@@ -86,6 +95,7 @@ def load_settings(path: str | Path | None = None) -> Settings:
 
     digest = _table(data, "digest")
     runtime = _table(data, "runtime")
+    email = _table(data, "email")
     platforms = tuple(str(item).strip().lower() for item in digest.get("platforms", []))
     platforms = tuple(item for item in platforms if item)
     if not platforms:
@@ -116,9 +126,14 @@ def load_settings(path: str | Path | None = None) -> Settings:
         keywords=keywords,
         max_age_hours=max(1, int(digest.get("max_age_hours", 72))),
         fetch_per_platform=max(1, int(digest.get("fetch_per_platform", 20))),
-        digest_limit=max(1, int(digest.get("digest_limit", 10))),
+        digest_limit=max(1, int(digest.get("digest_limit", 20))),
         bridge_timeout_seconds=max(10, int(runtime.get("bridge_timeout_seconds", 180))),
         state_file=_resolve(root, runtime.get("state_file", ".data/mybot/sent.json")),
         openbiliclaw_root=ob_root,
         openbiliclaw_python=_resolve(root, python_value),
+        queries_per_cycle=max(1, min(3, int(_table(data, "radar").get("queries_per_cycle", 2)))),
+        smtp_host=str(email.get("smtp_host", "smtp.qq.com")),
+        smtp_port=int(email.get("smtp_port", 465)),
+        email_to=str(email.get("to", "")),
+        email_from=str(email.get("from", "")),
     )
