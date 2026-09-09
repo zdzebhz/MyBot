@@ -40,12 +40,15 @@ GitHub 邮件提醒继续使用 GitHub 自带的 Watch/Notifications 设置，�
 
 ## 快速开始（Windows）
 
+以下命令使用 Windows 自带的 `powershell.exe`，因此兼容 Windows PowerShell 5.1。
+PowerShell 7 用户也可以将命令开头替换为 `pwsh`。
+
 ### 1. 安装
 
 先阅读 QwenPaw 首次初始化显示的安全说明；确认接受后，在仓库根目录运行：
 
 ```powershell
-pwsh -ExecutionPolicy Bypass -File .\scripts\setup.ps1 -AcceptQwenPawSecurityNotice
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup.ps1 -AcceptQwenPawSecurityNotice
 ```
 
 脚本会创建项目虚拟环境、安装固定版本的两个上游、生成本地配置，并把
@@ -57,7 +60,7 @@ MyBot 默认替你关闭 QwenPaw 的匿名环境遥测。若你愿意开启，�
 ### 2. 启动本地服务
 
 ```powershell
-pwsh -ExecutionPolicy Bypass -File .\scripts\start.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\start.ps1
 ```
 
 打开：
@@ -75,7 +78,7 @@ pwsh -ExecutionPolicy Bypass -File .\scripts\start.ps1
 3. 运行：
 
 ```powershell
-pwsh -ExecutionPolicy Bypass -File .\scripts\initialize-openbiliclaw.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\initialize-openbiliclaw.ps1
 ```
 
 脚本默认只启用 B 站和小红书，显式关闭其他内容源。初始化会交互式询问 OpenBiliClaw
@@ -97,13 +100,13 @@ pwsh -ExecutionPolicy Bypass -File .\scripts\initialize-openbiliclaw.ps1
 预览不会写入已推送账本：
 
 ```powershell
-pwsh -ExecutionPolicy Bypass -File .\scripts\digest.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\digest.ps1
 ```
 
 查看原始 JSON：
 
 ```powershell
-pwsh -ExecutionPolicy Bypass -File .\scripts\digest.ps1 -Format json
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\digest.ps1 -Format json
 ```
 
 确认内容正常后，可在 QwenPaw 对话中发送“生成今天的 AI 日报”，或直接使用
@@ -114,7 +117,7 @@ pwsh -ExecutionPolicy Bypass -File .\scripts\digest.ps1 -Format json
 先从已经配对成功的 QwenPaw 会话中取得频道、用户 ID 和会话 ID，然后运行：
 
 ```powershell
-pwsh -ExecutionPolicy Bypass -File .\scripts\configure-cron.ps1 `
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\configure-cron.ps1 `
   -Channel "qq" `
   -TargetUser "你的用户ID" `
   -TargetSession "你的会话ID"
@@ -123,7 +126,7 @@ pwsh -ExecutionPolicy Bypass -File .\scripts\configure-cron.ps1 `
 默认每天 08:30（Asia/Shanghai）推送。自定义时间示例：
 
 ```powershell
-pwsh -ExecutionPolicy Bypass -File .\scripts\configure-cron.ps1 `
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\configure-cron.ps1 `
   -Channel "feishu" `
   -TargetUser "ou_xxx" `
   -TargetSession "oc_xxx" `

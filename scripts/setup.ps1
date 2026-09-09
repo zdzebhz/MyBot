@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [switch]$SkipDependencyInstall,
     [switch]$AcceptQwenPawSecurityNotice,
@@ -89,18 +89,21 @@ $env:PYTHONUTF8 = "1"
 
 if (-not $EnableQwenPawTelemetry -and
     -not (Test-Path -LiteralPath $QwenConfig)) {
-    $TelemetryCode = @'
-import os
-from pathlib import Path
-from qwenpaw.utils.telemetry import mark_telemetry_collected
-mark_telemetry_collected(
-    Path(os.environ["QWENPAW_WORKING_DIR"]), opted_out=True
-)
-'@
-    & $QwenPython -c $TelemetryCode
-    if ($LASTEXITCODE -ne 0) {
-        throw "Failed to disable QwenPaw telemetry."
+    New-Item -ItemType Directory -Force -Path $QwenData | Out-Null
+    $TelemetryMarker = Join-Path $QwenData ".telemetry_collected"
+    $TelemetryData = [ordered]@{
+        collected_at = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+        qwenpaw_version = "2.2.0"
+        collected_versions = @("2.2.0")
+        opted_out = $true
+        version = "1.3"
     }
+    $TelemetryJson = $TelemetryData | ConvertTo-Json -Compress
+    [IO.File]::WriteAllText(
+        $TelemetryMarker,
+        $TelemetryJson,
+        [Text.UTF8Encoding]::new($false)
+    )
 }
 
 if (-not (Test-Path -LiteralPath $QwenConfig)) {
